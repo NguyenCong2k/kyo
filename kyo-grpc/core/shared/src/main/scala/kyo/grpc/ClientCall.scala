@@ -161,13 +161,20 @@ object ClientCall:
                 Sync.defer(call.sendMessage(request))
             )
 
-            Abort.run(send).map((result: Result[GrpcFailure, Unit]) =>
-                result match
-                    case success: Result.Success[Unit] @unchecked =>
-                        Sync.defer(call.halfClose()).andThen(success)
-                    case error: Result.Error[GrpcFailure] @unchecked =>
-                        Sync.defer(call.cancel("Call was cancelled due to an error.", error.failureOrPanic)).andThen(error)
-            )
+            Abort.run[GrpcFailure](
+                Abort.run[CallClosed](send).map:
+                    case Result.Success(_) => true
+                    case Result.Failure(callClosed) =>
+                        if callClosed.status.isOk then false
+                        else Abort.fail(callClosed.asException)
+                    case Result.Panic(e) => Abort.panic(e)
+            ).map:
+                case Result.Success(true) =>
+                    Sync.defer(call.halfClose()).andThen(Result.succeed(()))
+                case Result.Success(false) =>
+                    Result.succeed(())
+                case error: Result.Error[GrpcFailure] @unchecked =>
+                    Sync.defer(call.cancel("Call was cancelled due to an error.", error.failureOrPanic)).andThen(error)
         end sendAndClose
 
         def sendAndReceive(
@@ -357,13 +364,20 @@ object ClientCall:
                 Sync.defer(call.sendMessage(request))
             )
 
-            Abort.run(send).map((result: Result[GrpcFailure, Unit]) =>
-                result match
-                    case success: Result.Success[Unit] @unchecked =>
-                        Sync.defer(call.halfClose()).andThen(success)
-                    case error: Result.Error[GrpcFailure] @unchecked =>
-                        Sync.defer(call.cancel("Call was cancelled due to an error.", error.failureOrPanic)).andThen(error)
-            )
+            Abort.run[GrpcFailure](
+                Abort.run[CallClosed](send).map:
+                    case Result.Success(_) => true
+                    case Result.Failure(callClosed) =>
+                        if callClosed.status.isOk then false
+                        else Abort.fail(callClosed.asException)
+                    case Result.Panic(e) => Abort.panic(e)
+            ).map:
+                case Result.Success(true) =>
+                    Sync.defer(call.halfClose()).andThen(Result.succeed(()))
+                case Result.Success(false) =>
+                    Result.succeed(())
+                case error: Result.Error[GrpcFailure] @unchecked =>
+                    Sync.defer(call.cancel("Call was cancelled due to an error.", error.failureOrPanic)).andThen(error)
         end sendAndClose
 
         def sendAndReceive(
